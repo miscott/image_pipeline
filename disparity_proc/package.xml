@@ -1,5 +1,5 @@
 <package>
-  <name>stereo_image_proc</name>
+  <name>disparity_proc</name>
   <version>1.12.23</version>
   <description>Stereo and single image rectification and disparity processing.</description>
   <author>Patrick Mihelich</author>
