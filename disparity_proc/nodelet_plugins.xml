@@ -1,4 +1,4 @@
-<library path="lib/libstereo_image_proc">
+<library path="lib/libdisparity_proc">
 
   <class name="disparity_proc/disparity" type="stereo_image_proc::DisparityNodelet" base_class_type="nodelet::Nodelet">
     <description>Nodelet to perform stereo processing on a pair of rectified image streams, producing disparity images</description>
