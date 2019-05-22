@@ -47,7 +47,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/ximgproc/disparity_filter.hpp>
 
-namespace stereo_image_proc {
+namespace disparity_proc {
 
 struct StereoImageSet {
   image_proc::ImageSet left;
@@ -63,9 +63,11 @@ public:
 #if CV_MAJOR_VERSION == 3
   {
     ROS_WARN("HERE");
-    block_matcher_ = cv::StereoBM::create();
+    block_matcher_ = cv::StereoBM::create(96);
+    std::cout << block_matcher_.get()->getNumDisparities() << std::endl;
     sg_block_matcher_ = cv::StereoSGBM::create(1, 1, 10);
 #else
+
       : block_matcher_(cv::StereoBM::BASIC_PRESET), sg_block_matcher_() {
 #endif
   }
@@ -95,6 +97,8 @@ public:
   inline void setStereoType(StereoType type) {
     current_stereo_algorithm_ = type;
   }
+
+  cv::Ptr<cv::StereoBM> getStereoBm() { return block_matcher_; }
 
   int getInterpolation() const;
   void setInterpolation(int interp);
@@ -303,6 +307,6 @@ STEREO_IMAGE_PROC_SGBM_ONLY_OPENCV2(getDisp12MaxDiff, setDisp12MaxDiff, int,
                                     disp12MaxDiff)
 #endif
 
-} // namespace stereo_image_proc
+} // namespace disparity_proc
 
 #endif

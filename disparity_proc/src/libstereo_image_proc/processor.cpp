@@ -37,7 +37,7 @@
 #include <ros/assert.h>
 #include <sensor_msgs/image_encodings.h>
 
-namespace stereo_image_proc {
+namespace disparity_proc {
 
 bool StereoProcessor::process(const sensor_msgs::ImageConstPtr &left_raw,
                               const sensor_msgs::ImageConstPtr &right_raw,
@@ -93,21 +93,22 @@ void StereoProcessor::processDisparity(
   static const double inv_dpp = 1.0 / DPP;
   cv::Ptr<cv::StereoMatcher> right_matcher =
       cv::ximgproc::createRightMatcher(block_matcher_);
+
+  // Make identical to left (with what's avaliable from functions)
+  right_matcher->setBlockSize(block_matcher_->getBlockSize());
+  right_matcher->setMinDisparity(block_matcher_->getMinDisparity());
+  right_matcher->setNumDisparities(block_matcher_->getNumDisparities());
   right_matcher->setSpeckleWindowSize(block_matcher_->getSpeckleWindowSize());
   right_matcher->setSpeckleRange(block_matcher_->getSpeckleRange());
-
+  std::cout << block_matcher_->getTextureThreshold() << std::endl;
   cv::Mat dispR;
-
   // Block matcher produces 16-bit signed (fixed point) disparity image
 
 #if CV_MAJOR_VERSION == 3
   if (current_stereo_algorithm_ == BM) {
-    // TODO Set num disparities and block size in config and tune
-    block_matcher_->setNumDisparities(96);
-    block_matcher_->setBlockSize(5);
+    // TODO Set num disparities and
     block_matcher_->compute(left_rect, right_rect, disparity16_);
-    int numDisp = block_matcher_->getSpeckleWindowSize();
-    std::cout << numDisp << std::endl;
+    int numDisp = block_matcher_->getNumDisparities();
     right_matcher->compute(left_rect, right_rect, dispR);
   } else {
     sg_block_matcher_->compute(left_rect, right_rect, disparity16_);
@@ -121,39 +122,50 @@ void StereoProcessor::processDisparity(
 #endif
   cv::Ptr<cv::ximgproc::DisparityWLSFilter> wls_filter;
   if (current_stereo_algorithm_ == BM) {
-    wls_filter = cv::ximgproc::createDisparityWLSFilter(block_matcher_);
+    cv::Ptr<cv::StereoBM> matcher_left; // = block_matcher_;
+    wls_filter = cv::ximgproc::createDisparityWLSFilter(right_matcher);
   } else {
-    wls_filter = cv::ximgproc::createDisparityWLSFilter(sg_block_matcher_);
+    // cv::Ptr<cv::StereoSGBM> matcher_left = block_matcher_;
+    // wls_filter = cv::ximgproc::createDisparityWLSFilter(matcher_left);
   }
-  //
+
   wls_filter->setLambda(1000);
   wls_filter->setSigmaColor(1.0);
   wls_filter->setDepthDiscontinuityRadius(1);
 
-  cv::Mat filtered_disp, norm_filtered_disp;
+  cv::Mat filtered_disp, norm_filtered_disp, norm_disparity16_, norm_dispR;
   disparity16_.convertTo(disparity16_, CV_16S);
   wls_filter->filter(disparity16_, left_rect, filtered_disp, dispR);
-  cv::normalize(filtered_disp, norm_filtered_disp, 255, cv::NORM_MINMAX);
-  cv::imshow("left_rect", disparity16_);
-  cv::imshow("filtered_disp", norm_filtered_disp);
+  cv::Mat conf_map = cv::Mat(left_rect.rows, left_rect.cols, CV_8U);
+  conf_map = cv::Scalar(255);
+  conf_map = wls_filter->getConfidenceMap();
+  cv::normalize(filtered_disp, norm_filtered_disp, 255, 0, cv::NORM_MINMAX,
+                CV_8U);
+  cv::normalize(disparity16_, norm_disparity16_, 255, 0, cv::NORM_MINMAX,
+                CV_8U);
+  cv::normalize(dispR, norm_dispR, 255, 0, cv::NORM_MINMAX, CV_8U);
+  cv::imshow("dispL", norm_disparity16_);
+  // std::cout << norm_filtered_disp << std::endl;
+  cv::imshow("dispR", norm_dispR);
+  cv::imshow("norm_filtered_disp", norm_filtered_disp);
   cv::waitKey(1);
+  // filtered_disp.convertTo(filtered_disp, CV_16S);
 
   // Fill in DisparityImage image data, converting to 32-bit float
   sensor_msgs::Image &dimage = disparity.image;
-  dimage.height = disparity16_.rows;
-  dimage.width = disparity16_.cols;
+  dimage.height = norm_filtered_disp.rows;
+  dimage.width = norm_filtered_disp.cols;
   dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   dimage.step = dimage.width * sizeof(float);
   dimage.data.resize(dimage.step * dimage.height);
   cv::Mat_<float> dmat(dimage.height, dimage.width, (float *)&dimage.data[0],
                        dimage.step);
   // We convert from fixed-point to float disparity and also adjust for any
-  // x-offset between the principal points: d = d_fp*inv_dpp - (cx_l - cx_r)
+  // x-offset between the principal points: d = d_fp*inv_dpp - (cx_l -
+  // cx_r)
   disparity16_.convertTo(dmat, dmat.type(), inv_dpp,
                          -(model.left().cx() - model.right().cx()));
   ROS_ASSERT(dmat.data == &dimage.data[0]);
-  // MITCHELL EDIT
-
   /// @todo is_bigendian? :)
 
   // Stereo parameters
@@ -362,4 +374,4 @@ void StereoProcessor::processPoints2(
   }
 }
 
-} // namespace stereo_image_proc
+} // namespace disparity_proc

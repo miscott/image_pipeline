@@ -53,11 +53,12 @@
 #include <stereo_msgs/DisparityImage.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <stereo_image_proc/DisparityConfig.h>
+
+#include "disparity_proc/DisparityConfig.h"
 
 #include "disparity_proc/processor.h"
 
-namespace stereo_image_proc {
+namespace disparity_proc {
 
 using namespace sensor_msgs;
 using namespace stereo_msgs;
@@ -82,13 +83,13 @@ class DisparityNodelet : public nodelet::Nodelet {
 
   // Dynamic reconfigure
   boost::recursive_mutex config_mutex_;
-  typedef stereo_image_proc::DisparityConfig Config;
+  typedef disparity_proc::DisparityConfig Config;
   typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
   boost::shared_ptr<ReconfigureServer> reconfigure_server_;
 
   // Processing state (note: only safe because we're single-threaded!)
   image_geometry::StereoCameraModel model_;
-  stereo_image_proc::StereoProcessor
+  disparity_proc::StereoProcessor
       block_matcher_; // contains scratch buffers for block matching
 
   virtual void onInit();
@@ -104,6 +105,9 @@ class DisparityNodelet : public nodelet::Nodelet {
 };
 
 void DisparityNodelet::onInit() {
+  // block_matcher_.setNumDisparities(96);
+  // std::cout << block_matcher_.block_matcher_
+  // block_matcher_.setBlockSize(5);
   ros::NodeHandle &nh = getNodeHandle();
   ros::NodeHandle &private_nh = getPrivateNodeHandle();
 
@@ -171,7 +175,7 @@ void DisparityNodelet::imageCb(const ImageConstPtr &l_image_msg,
                                const ImageConstPtr &r_image_msg,
                                const CameraInfoConstPtr &r_info_msg) {
 
-  // Update the camera model
+  // // // Update the camera model
   model_.fromCameraInfo(l_info_msg, r_info_msg);
 
   // Allocate new disparity image message
@@ -179,14 +183,16 @@ void DisparityNodelet::imageCb(const ImageConstPtr &l_image_msg,
   disp_msg->header = l_info_msg->header;
   disp_msg->image.header = l_info_msg->header;
 
-  // Compute window of (potentially) valid disparities
+  //
+  // // Compute window of (potentially) valid disparities
   int border = block_matcher_.getCorrelationWindowSize() / 2;
   int left = block_matcher_.getDisparityRange() +
              block_matcher_.getMinDisparity() + border - 1;
   int wtf = (block_matcher_.getMinDisparity() >= 0)
                 ? border + block_matcher_.getMinDisparity()
                 : std::max(border, -block_matcher_.getMinDisparity());
-
+  //
+  // //
   int right = disp_msg->image.width - 1 - wtf;
   int top = border;
   int bottom = disp_msg->image.height - 1 - border;
@@ -194,16 +200,16 @@ void DisparityNodelet::imageCb(const ImageConstPtr &l_image_msg,
   disp_msg->valid_window.y_offset = top;
   disp_msg->valid_window.width = right - left;
   disp_msg->valid_window.height = bottom - top;
-
-  // Create cv::Mat views onto all buffers
+  //
+  // // Create cv::Mat views onto all buffers
   const cv::Mat_<uint8_t> l_image =
       cv_bridge::toCvShare(l_image_msg, sensor_msgs::image_encodings::MONO8)
           ->image;
   const cv::Mat_<uint8_t> r_image =
       cv_bridge::toCvShare(r_image_msg, sensor_msgs::image_encodings::MONO8)
           ->image;
-
-  // Perform block matching to find the disparities
+  //
+  // // Perform block matching to find the disparities
   block_matcher_.processDisparity(l_image, r_image, model_, *disp_msg);
 
   // Adjust for any x-offset between the principal points: d' = d - (cx_l -
@@ -228,9 +234,9 @@ void DisparityNodelet::configCb(Config &config, uint32_t level) {
   config.disparity_range =
       (config.disparity_range / 16) * 16; // must be multiple of 16
 
-  // check stereo method
-  // Note: With single-threaded NodeHandle, configCb and imageCb can't be called
-  // concurrently, so this is thread-safe.
+  // check stereo method Note : With single - threaded NodeHandle,
+  //     configCb and imageCb can't be called concurrently, so this is thread -
+  //     safe.
   block_matcher_.setPreFilterCap(config.prefilter_cap);
   block_matcher_.setCorrelationWindowSize(config.correlation_window_size);
   block_matcher_.setMinDisparity(config.min_disparity);
@@ -239,12 +245,12 @@ void DisparityNodelet::configCb(Config &config, uint32_t level) {
   block_matcher_.setSpeckleSize(config.speckle_size);
   block_matcher_.setSpeckleRange(config.speckle_range);
   if (config.stereo_algorithm ==
-      stereo_image_proc::Disparity_StereoBM) { // StereoBM
+      disparity_proc::Disparity_StereoBM) { // StereoBM
     block_matcher_.setStereoType(StereoProcessor::BM);
     block_matcher_.setPreFilterSize(config.prefilter_size);
     block_matcher_.setTextureThreshold(config.texture_threshold);
   } else if (config.stereo_algorithm ==
-             stereo_image_proc::Disparity_StereoSGBM) { // StereoSGBM
+             disparity_proc::Disparity_StereoSGBM) { // StereoSGBM
     block_matcher_.setStereoType(StereoProcessor::SGBM);
     block_matcher_.setSgbmMode(config.fullDP);
     block_matcher_.setP1(config.P1);
@@ -253,8 +259,8 @@ void DisparityNodelet::configCb(Config &config, uint32_t level) {
   }
 }
 
-} // namespace stereo_image_proc
+} // namespace disparity_proc
 
 // Register nodelet
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(stereo_image_proc::DisparityNodelet, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(disparity_proc::DisparityNodelet, nodelet::Nodelet)
